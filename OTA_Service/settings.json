@@ -1,0 +1,7 @@
+{
+  "connectionStrings": {
+    "ITO_DbContext": "server= localhost;database=IoTDB;user=root;password=qQ123456"
+    
+  }
+  }
+}
