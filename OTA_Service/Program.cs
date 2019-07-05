@@ -16,7 +16,7 @@ using NLog;
 
 
 
-namespace Dotnet_JOB_Client
+namespace OTAService
 {
     class Program
     {
