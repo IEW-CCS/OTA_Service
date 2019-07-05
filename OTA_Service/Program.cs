@@ -57,6 +57,8 @@ namespace OTAService
                 try
                 {
                     Console.WriteLine("Welcome DotNet Core C# MQTT Client");
+
+                    //  未來修改成dictionary 的方式
                     string Register_Topic = "Topic";
                     string Collecter_Topic = "Topic";
 
