@@ -9,8 +9,11 @@ using System.IO;
 using System.Reflection;
 using MQTTnet;
 using MQTTnet.Client;
-using IniParser;
-using IniParser.Model;
+using System.Xml.Linq;
+
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+
 using NLog;
 
 
@@ -28,13 +31,13 @@ namespace OTAService
         private static bool keepRunning = true;
         private static IMqttClient client = new MqttFactory().CreateMqttClient();
 
-        //- 2. MISC like Config ini or other 
-        private static FileIniDataParser parser = new FileIniDataParser();
-        private static IniData Config = parser.ReadFile(AppContext.BaseDirectory + "/settings/Task_Client.ini");
-
-        //--3. SetLog
+        //--2. SetLog
         private static Logger logger = NLog.LogManager.GetCurrentClassLogger();
-      
+
+        //--3. config 
+        private static Dictionary<string, string> dic_MQTT_Basic = null;
+        private static Dictionary<string, string> dic_MQTT_Recv = null;
+        private static Dictionary<string, string> dic_MQTT_Send = null;
 
         //--- Main Processing -----------
         static void Main(string[] args)
@@ -57,22 +60,29 @@ namespace OTAService
                 try
                 {
                     Console.WriteLine("Welcome DotNet Core C# MQTT Client");
+                    string Config_Path = AppContext.BaseDirectory + "/settings/Setting.xml";
 
-                    //  未來修改成dictionary 的方式
-                    string Register_Topic = "Topic";
-                    string Collecter_Topic = "Topic";
+                    logger.Info("Load MQTT Config From File: " + Config_Path);
+
+                    Load_Xml_Config_To_Dict(Config_Path);
+
+                    logger.Info("Load MQTT Config successful");
 
                     var options = new MqttClientOptionsBuilder()
-                        .WithClientId(Config["MQTT"]["ClinetID"])
-                        .WithTcpServer(Config["MQTT"]["BrokerIP"], Convert.ToInt32(Config["MQTT"]["BrokerPort"]))
+                        .WithClientId(dic_MQTT_Basic["ClinetID"])
+                        .WithTcpServer(dic_MQTT_Basic["BrokerIP"], Convert.ToInt32(dic_MQTT_Basic["BrokerPort"]))
                         .Build();
 
                     //- 1. setting receive topic defect # for all
                     client.Connected += async (s, e) =>
                     {
                         logger.Info("Connect TO MQTT Server");
-                        await client.SubscribeAsync(new TopicFilterBuilder().WithTopic(Register_Topic).WithAtMostOnceQoS().Build());
-                        await client.SubscribeAsync(new TopicFilterBuilder().WithTopic(Collecter_Topic).WithAtMostOnceQoS().Build());
+
+                        foreach (KeyValuePair<string, string> kvp in dic_MQTT_Recv)
+                        {
+                            await client.SubscribeAsync(new TopicFilterBuilder().WithTopic(kvp.Value).WithAtMostOnceQoS().Build());
+                            logger.Info("MQTT-Subscribe-Topic" + kvp.Value);
+                        }
                     };
 
                     //- 2. if disconnected try to re-connect 
@@ -136,9 +146,15 @@ namespace OTAService
         // ---------- Handle MQTT Subscribe
         static void client_PublishArrived(object sender, MqttApplicationMessageReceivedEventArgs e)
         {
+            string OTA_Topic = "/Cmd/OTA";
             string topic = e.ApplicationMessage.Topic;
             string message = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
 
+            if(topic.Contains(OTA_Topic))
+            {
+                ProcrssOTA(topic, message);
+            }
+          
         }
 
         // ---------- This is function is put message to MQTT Broker 
@@ -154,8 +170,53 @@ namespace OTAService
             }
         }
 
-     
-       
+        static void ProcrssOTA(string topic, string payload)
+        {
+            
+            OTAService.cls_Cmd_OTA OTA_CMD = JsonConvert.DeserializeObject<cls_Cmd_OTA>(payload);
+        }
+
+        static void Load_Xml_Config_To_Dict(string config_path)
+        {
+            XElement SettingFromFile = XElement.Load(config_path);
+            XElement MQTT_Setting = SettingFromFile.Element("MQTT");
+            XElement Basic_Setting = MQTT_Setting.Element("Basic_Setting");
+            XElement Receive_Topic = MQTT_Setting.Element("Receive_Topic");
+            XElement Send_Topic = MQTT_Setting.Element("Send_Topic");
+
+            dic_MQTT_Basic = new Dictionary<string, string>();
+            dic_MQTT_Recv = new Dictionary<string, string>();
+            dic_MQTT_Send = new Dictionary<string, string>();
+
+            if (Basic_Setting != null)
+            {
+                dic_MQTT_Basic.Clear();
+                foreach (var el in Basic_Setting.Elements())
+                {
+                    dic_MQTT_Basic.Add(el.Name.LocalName, el.Value);
+                }
+            }
+
+            if (Receive_Topic != null)
+            {
+                foreach (var el in Receive_Topic.Elements())
+                {
+                    dic_MQTT_Recv.Add(el.Name.LocalName, el.Value);
+                }
+            }
+
+            if (Send_Topic != null)
+            {
+                foreach (var el in Send_Topic.Elements())
+                {
+                    dic_MQTT_Send.Add(el.Name.LocalName, el.Value);
+                }
+            }
+        }
+
+
+
+
     }
 
 }
