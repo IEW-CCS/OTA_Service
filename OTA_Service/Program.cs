@@ -12,6 +12,7 @@ using MQTTnet.Client;
 using IniParser;
 using IniParser.Model;
 using NLog;
+using System.Net;
 
 
 
@@ -43,6 +44,13 @@ namespace OTAService
             //如果要做到跨Session唯一，名稱可加入"Global\"前綴字
             //如此即使用多個帳號透過Terminal Service登入系統
             //整台機器也只能執行一份
+
+            //-----FTP download file
+            //WebClient client = new WebClient();
+           // client.Credentials = new NetworkCredential("username", "password");
+           // client.DownloadFile("ftp://ftp.example.com/remote/path/file.zip", @"C:\local\path\file.zip");
+
+
             using (Mutex m = new Mutex(false, "Global\\" + appGuid))
             {
                 //檢查是否同名Mutex已存在(表示另一份程式正在執行)
