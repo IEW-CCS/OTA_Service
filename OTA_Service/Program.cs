@@ -74,6 +74,8 @@ namespace OTAService
                 try
                 {
                     Console.WriteLine("Welcome DotNet Core C# MQTT Client");
+                    Console.WriteLine("Please key in Ctrl+ C to exit");
+
                     string Config_Path = AppContext.BaseDirectory + "/settings/Setting.xml";
 
                     logger.Info("Load MQTT Config From File: " + Config_Path);
@@ -140,7 +142,7 @@ namespace OTAService
                     ThreadPool.SetMinThreads(4, 4);
 
                     //- 6. 執行無窮迴圈等待 
-                    Console.WriteLine("Please key in Ctrl+ C to exit");
+                   
                     while (Program.keepRunning)
                     {
                         System.Threading.Thread.Sleep(100);
