@@ -186,6 +186,7 @@ namespace OTAService
 
         static void ProcrssOTA(string topic, string payload)
         {
+            logger.Info(string.Format("Receive OTA Event Topic : {0}, Payload :{1}", topic, payload));
             OTAService.cls_Cmd_OTA OTA_CMD = JsonConvert.DeserializeObject<cls_Cmd_OTA>(payload);
 
             OTAService.cls_Cmd_OTA_Ack OTA_CMD_Ack = new OTAService.cls_Cmd_OTA_Ack();
@@ -195,8 +196,10 @@ namespace OTAService
             OTA_CMD_Ack.New_Version = OTA_CMD.New_Version;
           
             string RemotePath = string.Concat("ftp://", OTA_CMD.FTP_Server, "/", OTA_CMD.Image_Name);
-            string LocalPath = Path.Combine(AppContext.BaseDirectory, "OTA", "Download", OTA_CMD.Trace_ID, OTA_CMD.Image_Name);
-            string ZIPPath   = Path.Combine(AppContext.BaseDirectory, "OTA",  "Extract", OTA_CMD.Trace_ID);
+
+            string File_Name = Path.GetFileName(OTA_CMD.Image_Name);
+            string LocalPath = Path.Combine(AppContext.BaseDirectory, "OTA", "Download", OTA_CMD.App_Name, OTA_CMD.New_Version, File_Name);
+            string ZIPPath   = Path.Combine(AppContext.BaseDirectory, "OTA", "Extract" , OTA_CMD.App_Name, OTA_CMD.New_Version);
 
             if (!Directory.Exists(Path.GetDirectoryName(LocalPath)))
             {
@@ -225,6 +228,10 @@ namespace OTAService
 
                     // -----  確認城市關閉 更新程式碼 -------
                     // 考慮直接 Replace ???
+
+                    OTA_CMD_Ack.Cmd_Result = "OK";
+                    logger.Info(string.Format("OTA Process Finished"));
+
                 }
                 else
                 {
