@@ -11,6 +11,9 @@ using MQTTnet;
 using MQTTnet.Client;
 using System.Xml.Linq;
 using System.Net;
+using System.Diagnostics;
+
+
 
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -65,6 +68,12 @@ namespace OTAService
 
                 try
                 {
+
+                    Process currentProcess = Process.GetCurrentProcess();
+                    string pid =  currentProcess.Id.ToString();
+
+                    Console.WriteLine("Process ID = " + pid);
+
                     Console.WriteLine("Welcome DotNet Core C# MQTT Client");
                     string Config_Path = AppContext.BaseDirectory + "/settings/Setting.xml";
 
@@ -212,6 +221,35 @@ namespace OTAService
                         }
                     }
 
+
+                   switch( OTA_CMD.App_Name)   
+                    {
+                        case "IOT":
+                        case "WORKER":
+
+                            int proceid = 0;
+                            if (int.TryParse(OTA_CMD.Process_ID, out proceid))
+                            {
+                                if (ProcessExists(proceid))
+                                {
+                                    Process processToKill = Process.GetProcessById(proceid);
+                                    processToKill.Kill();
+                                    Array.ForEach(Process.GetProcessesByName("cmd"), x => x.Kill());  // cmd line colsed ?
+                                }
+                            }
+
+                            break;
+
+                        case "FIRMWARE":
+
+                            break;
+
+                        default:
+                            logger.Error("OTA Update App is not in support list (IOT,Worker,Firmware) AppName : " + OTA_CMD.App_Name);
+                            break;
+
+
+                    }
                     // -----  確認城市關閉 更新程式碼 -------
                     // 考慮直接 Replace ???
                 }
@@ -310,10 +348,11 @@ namespace OTAService
             }
         }
 
-
-
+        public static bool ProcessExists(int id)
+        {
+            return Process.GetProcesses().Any(x => x.Id == id);
+        }
 
     }
-
 }
 
