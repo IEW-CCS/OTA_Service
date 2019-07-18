@@ -17,11 +17,6 @@ using Newtonsoft.Json.Linq;
 using Ionic.Zip;
 using NLog;
 using System.Security.Cryptography;
-using System.Net;
-
-using System.Net.Http;
-
-
 
 
 
@@ -48,7 +43,7 @@ namespace OTAService
 
         //--4. Set Const Value 
         private const string Gateway_ID = "GateWayID";
-        private const string Device_ID  = "DeviceID";
+        private const string Device_ID = "DeviceID";
 
         //--- Main Processing -----------
         static void Main(string[] args)
@@ -57,13 +52,6 @@ namespace OTAService
             //如果要做到跨Session唯一，名稱可加入"Global\"前綴字
             //如此即使用多個帳號透過Terminal Service登入系統
             //整台機器也只能執行一份
-
-            //-----FTP download file
-            //WebClient client = new WebClient();
-           // client.Credentials = new NetworkCredential("username", "password");
-           // client.DownloadFile("ftp://ftp.example.com/remote/path/file.zip", @"C:\local\path\file.zip");
-
-
             using (Mutex m = new Mutex(false, "Global\\" + appGuid))
             {
                 //檢查是否同名Mutex已存在(表示另一份程式正在執行)
@@ -78,8 +66,6 @@ namespace OTAService
                 try
                 {
                     Console.WriteLine("Welcome DotNet Core C# MQTT Client");
-                    Console.WriteLine("Please key in Ctrl+ C to exit");
-
                     string Config_Path = AppContext.BaseDirectory + "/settings/Setting.xml";
 
                     logger.Info("Load MQTT Config From File: " + Config_Path);
@@ -140,13 +126,13 @@ namespace OTAService
                     };
 
                     logger.Info("System Initial Finished");
-                    
+
                     //-  5.2 set thread pool max
                     ThreadPool.SetMaxThreads(16, 16);
                     ThreadPool.SetMinThreads(4, 4);
 
                     //- 6. 執行無窮迴圈等待 
-                   
+                    Console.WriteLine("Please key in Ctrl+ C to exit");
                     while (Program.keepRunning)
                     {
                         System.Threading.Thread.Sleep(100);
@@ -158,7 +144,7 @@ namespace OTAService
                 catch (Exception ex)
                 {
                     logger.Error(ex.Message);
-                    
+
                 }
             }
         }
@@ -169,7 +155,6 @@ namespace OTAService
 
             string topic = e.ApplicationMessage.Topic;
             string message = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
-
             Thread thread = new Thread(() => ProcrssOTA(topic, message));
             thread.Start();
 
@@ -190,7 +175,6 @@ namespace OTAService
 
         static void ProcrssOTA(string topic, string payload)
         {
-            logger.Info(string.Format("Receive OTA Event Topic : {0}, Payload :{1}", topic, payload));
             OTAService.cls_Cmd_OTA OTA_CMD = JsonConvert.DeserializeObject<cls_Cmd_OTA>(payload);
 
             OTAService.cls_Cmd_OTA_Ack OTA_CMD_Ack = new OTAService.cls_Cmd_OTA_Ack();
@@ -198,12 +182,10 @@ namespace OTAService
             OTA_CMD_Ack.Trace_ID = OTA_CMD.Trace_ID;
             OTA_CMD_Ack.App_Name = OTA_CMD.App_Name;
             OTA_CMD_Ack.New_Version = OTA_CMD.New_Version;
-          
-            string RemotePath = string.Concat("ftp://", OTA_CMD.FTP_Server, "/", OTA_CMD.Image_Name);
 
-            string File_Name = Path.GetFileName(OTA_CMD.Image_Name);
-            string LocalPath = Path.Combine(AppContext.BaseDirectory, "OTA", "Download", OTA_CMD.App_Name, OTA_CMD.New_Version, File_Name);
-            string ZIPPath   = Path.Combine(AppContext.BaseDirectory, "OTA", "Extract" , OTA_CMD.App_Name, OTA_CMD.New_Version);
+            string RemotePath = string.Concat("ftp://", OTA_CMD.FTP_Server, "/", OTA_CMD.Image_Name);
+            string LocalPath = Path.Combine(AppContext.BaseDirectory, "OTA", "Download", OTA_CMD.Trace_ID, OTA_CMD.Image_Name);
+            string ZIPPath = Path.Combine(AppContext.BaseDirectory, "OTA", "Extract", OTA_CMD.Trace_ID);
 
             if (!Directory.Exists(Path.GetDirectoryName(LocalPath)))
             {
@@ -215,7 +197,7 @@ namespace OTAService
                 WebClient client = new WebClient();
                 client.Credentials = new NetworkCredential(OTA_CMD.User_name, OTA_CMD.Password);
                 client.DownloadFile(RemotePath, LocalPath);
-            
+
                 string strMD5 = GetMD5HashFromFile(LocalPath);
 
                 OTA_CMD_Ack.MD5_String = strMD5;
@@ -232,20 +214,16 @@ namespace OTAService
 
                     // -----  確認城市關閉 更新程式碼 -------
                     // 考慮直接 Replace ???
-
-                    OTA_CMD_Ack.Cmd_Result = "OK";
-                    logger.Info(string.Format("OTA Process Finished"));
-
                 }
                 else
                 {
                     OTA_CMD_Ack.Cmd_Result = "NG";
                     logger.Error(string.Format("Download File MD5 Check Mismatch, MD5 : {0}, OTA_Cmd : {1}", strMD5, payload));
-                  
-                 }
+
+                }
 
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
 
                 Console.WriteLine(ex.Message);
@@ -332,32 +310,10 @@ namespace OTAService
             }
         }
 
-        public static void firmware_Update (string path)
-        {
-            /*
-            HttpClient client = new HttpClient();
-            client.BaseAddress = new Uri("http://192.168.1.104");   // ESP8266 IP
-            byte[] firmwareContent = File.ReadAllBytes(@"C:\Users\username\Desktop\firmware-esp.bin");
-            HttpContent httpContent = new ByteArrayContent(firmwareContent);
-            var result = client.PostAsync("/update", httpContent).Result;  // image 
-            Console.WriteLine(result.RequestMessage.ToString());
-            Console.ReadKey();
-            */
-            
-            HttpClient client = new HttpClient();
-            client.BaseAddress = new Uri("http://esp8266-ip-address");
-
-            byte[] firmwareContent = File.ReadAllBytes(@"C:\Users\username\Desktop\firmware-esp.bin");
-            HttpContent httpContent = new ByteArrayContent(firmwareContent);
-            httpContent.Headers.Add("Content-Type", "application/octet-stream");
-            MultipartFormDataContent formContent = new MultipartFormDataContent();
-            formContent.Add(httpContent, "update", "firmware.bin");
-            var result = client.PostAsync("/update", formContent).Result;
-            Console.WriteLine(result.RequestMessage.ToString());
 
 
 
-        }
     }
+
 }
 
