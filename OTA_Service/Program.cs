@@ -17,6 +17,7 @@ using Newtonsoft.Json.Linq;
 using Ionic.Zip;
 using NLog;
 using System.Security.Cryptography;
+using System.Net;
 
 using System.Net.Http;
 
@@ -56,6 +57,13 @@ namespace OTAService
             //如果要做到跨Session唯一，名稱可加入"Global\"前綴字
             //如此即使用多個帳號透過Terminal Service登入系統
             //整台機器也只能執行一份
+
+            //-----FTP download file
+            //WebClient client = new WebClient();
+           // client.Credentials = new NetworkCredential("username", "password");
+           // client.DownloadFile("ftp://ftp.example.com/remote/path/file.zip", @"C:\local\path\file.zip");
+
+
             using (Mutex m = new Mutex(false, "Global\\" + appGuid))
             {
                 //檢查是否同名Mutex已存在(表示另一份程式正在執行)
@@ -70,6 +78,8 @@ namespace OTAService
                 try
                 {
                     Console.WriteLine("Welcome DotNet Core C# MQTT Client");
+                    Console.WriteLine("Please key in Ctrl+ C to exit");
+
                     string Config_Path = AppContext.BaseDirectory + "/settings/Setting.xml";
 
                     logger.Info("Load MQTT Config From File: " + Config_Path);
@@ -136,7 +146,7 @@ namespace OTAService
                     ThreadPool.SetMinThreads(4, 4);
 
                     //- 6. 執行無窮迴圈等待 
-                    Console.WriteLine("Please key in Ctrl+ C to exit");
+                   
                     while (Program.keepRunning)
                     {
                         System.Threading.Thread.Sleep(100);
@@ -180,6 +190,7 @@ namespace OTAService
 
         static void ProcrssOTA(string topic, string payload)
         {
+            logger.Info(string.Format("Receive OTA Event Topic : {0}, Payload :{1}", topic, payload));
             OTAService.cls_Cmd_OTA OTA_CMD = JsonConvert.DeserializeObject<cls_Cmd_OTA>(payload);
 
             OTAService.cls_Cmd_OTA_Ack OTA_CMD_Ack = new OTAService.cls_Cmd_OTA_Ack();
@@ -189,8 +200,10 @@ namespace OTAService
             OTA_CMD_Ack.New_Version = OTA_CMD.New_Version;
           
             string RemotePath = string.Concat("ftp://", OTA_CMD.FTP_Server, "/", OTA_CMD.Image_Name);
-            string LocalPath = Path.Combine(AppContext.BaseDirectory, "OTA", "Download", OTA_CMD.Trace_ID, OTA_CMD.Image_Name);
-            string ZIPPath   = Path.Combine(AppContext.BaseDirectory, "OTA",  "Extract", OTA_CMD.Trace_ID);
+
+            string File_Name = Path.GetFileName(OTA_CMD.Image_Name);
+            string LocalPath = Path.Combine(AppContext.BaseDirectory, "OTA", "Download", OTA_CMD.App_Name, OTA_CMD.New_Version, File_Name);
+            string ZIPPath   = Path.Combine(AppContext.BaseDirectory, "OTA", "Extract" , OTA_CMD.App_Name, OTA_CMD.New_Version);
 
             if (!Directory.Exists(Path.GetDirectoryName(LocalPath)))
             {
@@ -219,6 +232,10 @@ namespace OTAService
 
                     // -----  確認城市關閉 更新程式碼 -------
                     // 考慮直接 Replace ???
+
+                    OTA_CMD_Ack.Cmd_Result = "OK";
+                    logger.Info(string.Format("OTA Process Finished"));
+
                 }
                 else
                 {
