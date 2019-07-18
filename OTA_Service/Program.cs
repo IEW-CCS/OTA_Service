@@ -18,6 +18,10 @@ using Ionic.Zip;
 using NLog;
 using System.Security.Cryptography;
 
+using System.Net.Http;
+
+
+
 
 
 namespace OTAService
@@ -311,10 +315,32 @@ namespace OTAService
             }
         }
 
+        public static void firmware_Update (string path)
+        {
+            /*
+            HttpClient client = new HttpClient();
+            client.BaseAddress = new Uri("http://192.168.1.104");   // ESP8266 IP
+            byte[] firmwareContent = File.ReadAllBytes(@"C:\Users\username\Desktop\firmware-esp.bin");
+            HttpContent httpContent = new ByteArrayContent(firmwareContent);
+            var result = client.PostAsync("/update", httpContent).Result;  // image 
+            Console.WriteLine(result.RequestMessage.ToString());
+            Console.ReadKey();
+            */
+            
+            HttpClient client = new HttpClient();
+            client.BaseAddress = new Uri("http://esp8266-ip-address");
+
+            byte[] firmwareContent = File.ReadAllBytes(@"C:\Users\username\Desktop\firmware-esp.bin");
+            HttpContent httpContent = new ByteArrayContent(firmwareContent);
+            httpContent.Headers.Add("Content-Type", "application/octet-stream");
+            MultipartFormDataContent formContent = new MultipartFormDataContent();
+            formContent.Add(httpContent, "update", "firmware.bin");
+            var result = client.PostAsync("/update", formContent).Result;
+            Console.WriteLine(result.RequestMessage.ToString());
 
 
 
+        }
     }
-
 }
 
