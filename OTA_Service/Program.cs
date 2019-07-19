@@ -31,6 +31,8 @@ namespace OTAService
         //每支程式以不同GUID當成Mutex名稱，可避免執行檔同名同姓的風險
         static string appGuid = "{B19DAFCB-729C-43A6-8232-F3C31BB4E404}";
 
+        static string osNameAndVersion = System.Runtime.InteropServices.RuntimeInformation.OSDescription;
+
         //- 1. 宣告 MQTT 實體物件 
         private static bool keepRunning = true;
         private static IMqttClient client = new MqttFactory().CreateMqttClient();
@@ -43,6 +45,7 @@ namespace OTAService
         private static Dictionary<string, string> dic_MQTT_Basic = null;
         private static Dictionary<string, string> dic_MQTT_Recv = null;
         private static Dictionary<string, string> dic_MQTT_Send = null;
+        private static Dictionary<string, string> dic_PID = null;
 
         //--4. Set Const Value 
         private const string Gateway_ID = "GateWayID";
@@ -140,6 +143,9 @@ namespace OTAService
                     ThreadPool.SetMaxThreads(16, 16);
                     ThreadPool.SetMinThreads(4, 4);
 
+                    var osNameAndVersion = System.Runtime.InteropServices.RuntimeInformation.OSDescription;
+                    dic_PID = new Dictionary<string, string>();
+
                     //- 6. 執行無窮迴圈等待 
                     Console.WriteLine("Please key in Ctrl+ C to exit");
                     while (Program.keepRunning)
@@ -184,9 +190,13 @@ namespace OTAService
 
         static void ProcrssOTA(string topic, string payload)
         {
-            OTAService.cls_Cmd_OTA OTA_CMD = JsonConvert.DeserializeObject<cls_Cmd_OTA>(payload);
 
+            
+            OTAService.cls_Cmd_OTA OTA_CMD = JsonConvert.DeserializeObject<cls_Cmd_OTA>(payload);
             OTAService.cls_Cmd_OTA_Ack OTA_CMD_Ack = new OTAService.cls_Cmd_OTA_Ack();
+
+
+            string OTA_Key = string.Concat(OTA_CMD.App_Name, "_", OTA_CMD.Trace_ID);
 
             OTA_CMD_Ack.Trace_ID = OTA_CMD.Trace_ID;
             OTA_CMD_Ack.App_Name = OTA_CMD.App_Name;
@@ -206,9 +216,7 @@ namespace OTAService
                 WebClient client = new WebClient();
                 client.Credentials = new NetworkCredential(OTA_CMD.User_name, OTA_CMD.Password);
                 client.DownloadFile(RemotePath, LocalPath);
-
                 string strMD5 = GetMD5HashFromFile(LocalPath);
-
                 OTA_CMD_Ack.MD5_String = strMD5;
 
                 if (strMD5.Equals(OTA_CMD.MD5_String))
@@ -221,23 +229,56 @@ namespace OTAService
                         }
                     }
 
-
                    switch( OTA_CMD.App_Name)   
                     {
                         case "IOT":
                         case "WORKER":
 
+                            string _OTA_App_key = string.Concat(OTA_CMD.App_Name, "OTA");
+                            string _Publish_OTA_Topic = dic_MQTT_Send[_OTA_App_key].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
+                            string _Publish_OTA_Message = JsonConvert.SerializeObject(new { Trace_ID = OTA_Key, Cmd = "OTA" }, Formatting.Indented);
+                            client_Publish_To_Broker(_Publish_OTA_Topic, _Publish_OTA_Message);
+
+                            Thread.Sleep(10000); // Wait 10 s
+
                             int proceid = 0;
-                            if (int.TryParse(OTA_CMD.Process_ID, out proceid))
+                            string ProcessID = string.Empty;
+                            lock(dic_PID)
+                            {
+                                ProcessID = dic_PID[OTA_Key];
+                                dic_PID.Remove(OTA_Key);
+                            }
+
+                            if (int.TryParse(ProcessID, out proceid))
                             {
                                 if (ProcessExists(proceid))
                                 {
                                     Process processToKill = Process.GetProcessById(proceid);
                                     processToKill.Kill();
-                                    Array.ForEach(Process.GetProcessesByName("cmd"), x => x.Kill());  // cmd line colsed ?
+                                   // Array.ForEach(Process.GetProcessesByName("cmd"), x => x.Kill());  // cmd line colsed ?
                                 }
                             }
 
+                            Thread.Sleep(30000); // Wait 3 s
+
+                            if (osNameAndVersion.Contains("Linux"))
+                            {
+                                string shell_cmd = string.Concat(@"sh shellcmd.sh");
+                                Execute_Linux_Command(shell_cmd);
+
+                            }
+                            else if (osNameAndVersion.Contains("MacOS"))
+                            {
+
+
+                            }
+                            else
+                            {
+                                ProcessStartInfo Info2 = new ProcessStartInfo();
+                                Info2.FileName = "xxx.bat";//執行的檔案名稱
+                                Info2.WorkingDirectory = @"d:\test";//檔案所在的目錄
+                                Process.Start(Info2);
+                            }
                             break;
 
                         case "FIRMWARE":
@@ -247,17 +288,13 @@ namespace OTAService
                         default:
                             logger.Error("OTA Update App is not in support list (IOT,Worker,Firmware) AppName : " + OTA_CMD.App_Name);
                             break;
-
-
                     }
-                    // -----  確認城市關閉 更新程式碼 -------
-                    // 考慮直接 Replace ???
+
                 }
                 else
                 {
                     OTA_CMD_Ack.Cmd_Result = "NG";
                     logger.Error(string.Format("Download File MD5 Check Mismatch, MD5 : {0}, OTA_Cmd : {1}", strMD5, payload));
-
                 }
 
             }
@@ -266,7 +303,6 @@ namespace OTAService
 
                 Console.WriteLine(ex.Message);
             }
-
 
             string _Publish_Topic = dic_MQTT_Send["OTA_Ack"].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
             string _Publish_Message = JsonConvert.SerializeObject(OTA_CMD_Ack);
@@ -351,6 +387,21 @@ namespace OTAService
         public static bool ProcessExists(int id)
         {
             return Process.GetProcesses().Any(x => x.Id == id);
+        }
+
+        public static void Execute_Linux_Command(string command)
+        {
+            Process proc = new System.Diagnostics.Process();
+            proc.StartInfo.FileName = "/bin/bash";
+            proc.StartInfo.Arguments = "-c \" " + command + " \"";
+            proc.StartInfo.UseShellExecute = false;
+            proc.StartInfo.RedirectStandardOutput = true;
+            proc.Start();
+
+            while (!proc.StandardOutput.EndOfStream)
+            {
+                Console.WriteLine(proc.StandardOutput.ReadLine());
+            }
         }
 
     }
