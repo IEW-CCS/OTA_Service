@@ -210,10 +210,25 @@ namespace OTAService
             string topic = e.ApplicationMessage.Topic;
             string message = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
 
-       
+            if (topic == dic_MQTT_Recv["OTA"])
+            {
+                Thread thread = new Thread(() => ProcrssOTA(topic, message));
+                thread.Start();
 
-            Thread thread = new Thread(() => ProcrssOTA(topic, message));
-            thread.Start();
+            }
+            else if (topic == dic_MQTT_Recv["OTA_IOT_Client_Ack"])
+            {
+                dynamic jsonResponse = JObject.Parse(message);
+                dic_PID.Add("OTA_IOT_Client_Ack", jsonResponse.ProcrssID);
+         
+            }
+
+            else if (topic == dic_MQTT_Recv["OTA_worker_Ack"])
+            {
+                dynamic jsonResponse = JObject.Parse(message);
+                dic_PID.Add("OTA_worker_Ack", jsonResponse.ProcrssID);
+
+            }
         }
 
         // ---------- This is function is put message to MQTT Broker 
@@ -272,7 +287,7 @@ namespace OTAService
                         case "IOT":
                         case "WORKER":
 
-                            string _OTA_App_key = string.Concat(OTA_CMD.App_Name, "OTA");
+                            string _OTA_App_key = string.Concat(OTA_CMD.App_Name, "_OTA");
                             string _Publish_OTA_Topic = dic_MQTT_Send[_OTA_App_key].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
                             string _Publish_OTA_Message = JsonConvert.SerializeObject(new { Trace_ID = OTA_Key, Cmd = "OTA" }, Formatting.Indented);
                             client_Publish_To_Broker(_Publish_OTA_Topic, _Publish_OTA_Message);
