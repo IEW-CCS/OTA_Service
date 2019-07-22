@@ -29,7 +29,7 @@ namespace OTAService
     {
 
         //每支程式以不同GUID當成Mutex名稱，可避免執行檔同名同姓的風險
-        static string appGuid = "{B19DAFCB-729C-43A6-8232-F3C31BB4E404}";
+        static string appGuid = "{B19DAFCC-729C-43A6-8232-F3C31BB4E404}";
 
         static string osNameAndVersion = System.Runtime.InteropServices.RuntimeInformation.OSDescription;
 
