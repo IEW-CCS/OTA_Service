@@ -51,6 +51,10 @@ namespace OTAService
         private const string Gateway_ID = "GateWayID";
         private const string Device_ID = "DeviceID";
 
+
+        //---5. Routin_Job
+        private static System.Threading.Timer timer_routine_job;
+
         //--- Main Processing -----------
         static void Main(string[] args)
         {
@@ -74,9 +78,7 @@ namespace OTAService
 
                     Process currentProcess = Process.GetCurrentProcess();
                     string pid =  currentProcess.Id.ToString();
-
-                    Console.WriteLine("Process ID = " + pid);
-
+                   
                     Console.WriteLine("Welcome DotNet Core C# MQTT Client");
                     string Config_Path = AppContext.BaseDirectory + "/settings/Setting.xml";
 
@@ -144,7 +146,9 @@ namespace OTAService
                     ThreadPool.SetMinThreads(4, 4);
 
                     var osNameAndVersion = System.Runtime.InteropServices.RuntimeInformation.OSDescription;
-                    dic_PID = new Dictionary<string, string>();
+
+                    Timer_Routine_Job(60000);  //execute routine job 
+
 
                     //- 6. 執行無窮迴圈等待 
                     Console.WriteLine("Please key in Ctrl+ C to exit");
@@ -164,15 +168,52 @@ namespace OTAService
             }
         }
 
+
+        static void Timer_Routine_Job(int interval)
+        {
+            if (interval == 0)
+                interval = 10000;  // 10s
+
+            System.Threading.Thread Thread_Timer_Report_EDC = new System.Threading.Thread
+            (
+               delegate (object value)
+               {
+                   int Interval = Convert.ToInt32(value);
+                   timer_routine_job = new System.Threading.Timer(new System.Threading.TimerCallback(Routine_TimerTask), null, 1000, Interval);
+               }
+            );
+            Thread_Timer_Report_EDC.Start(interval);
+        }
+        static void Routine_TimerTask(object timerState)
+        {
+            try
+            {
+
+                string _OTA_App_key = "HeartBeat";
+                string _Publish_OTA_Topic = dic_MQTT_Send[_OTA_App_key].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]);
+                string _Publish_OTA_Message = JsonConvert.SerializeObject(new { Trace_ID = DateTime.Now.ToString("yyyyMMddHHmmssfff"), Cmd = "OTA_HB" }, Formatting.Indented);
+                client_Publish_To_Broker(_Publish_OTA_Topic, _Publish_OTA_Message);
+                logger.Info("Report OTA HeartBeat" );
+
+            }
+            catch (Exception ex)
+            {
+
+            }
+        }
+
+
+
         // ---------- Handle MQTT Subscribe
         static void client_PublishArrived(object sender, MqttApplicationMessageReceivedEventArgs e)
         {
-
             string topic = e.ApplicationMessage.Topic;
             string message = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
+
+       
+
             Thread thread = new Thread(() => ProcrssOTA(topic, message));
             thread.Start();
-
         }
 
         // ---------- This is function is put message to MQTT Broker 
@@ -190,11 +231,8 @@ namespace OTAService
 
         static void ProcrssOTA(string topic, string payload)
         {
-
-            
             OTAService.cls_Cmd_OTA OTA_CMD = JsonConvert.DeserializeObject<cls_Cmd_OTA>(payload);
             OTAService.cls_Cmd_OTA_Ack OTA_CMD_Ack = new OTAService.cls_Cmd_OTA_Ack();
-
 
             string OTA_Key = string.Concat(OTA_CMD.App_Name, "_", OTA_CMD.Trace_ID);
 
@@ -269,8 +307,8 @@ namespace OTAService
                             }
                             else if (osNameAndVersion.Contains("MacOS"))
                             {
-
-
+                                string shell_cmd = string.Concat(@"sh shellcmd.sh");
+                                Execute_Linux_Command(shell_cmd);
                             }
                             else
                             {
