@@ -29,7 +29,7 @@ namespace OTAService
     {
 
         //每支程式以不同GUID當成Mutex名稱，可避免執行檔同名同姓的風險
-        static string appGuid = "{B19DAFCC-729C-43A6-8232-F3C31BB4E404}";
+        static string appGuid = "{B19DAFDD-729C-43A7-8232-F3C31BB4E404}";
 
         static string osNameAndVersion = System.Runtime.InteropServices.RuntimeInformation.OSDescription;
 
@@ -50,6 +50,9 @@ namespace OTAService
         //--4. Set Const Value 
         private const string Gateway_ID = "GateWayID";
         private const string Device_ID = "DeviceID";
+        private const string OTA_DL_Path = "OTA_Download_Path";
+        private const string OTA_ZIP_Path = "OTA_ZIP_Path";
+        private const string OTA_Http_Path = "OTA_Http_Path";
 
 
         //---5. Routin_Job
@@ -100,7 +103,7 @@ namespace OTAService
 
                         foreach (KeyValuePair<string, string> kvp in dic_MQTT_Recv)
                         {
-                            string Subscrive_Topic = kvp.Value.Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]);
+                            string Subscrive_Topic = kvp.Value;
                             await client.SubscribeAsync(new TopicFilterBuilder().WithTopic(Subscrive_Topic).WithAtMostOnceQoS().Build());
                             logger.Info("MQTT-Subscribe-Topic : " + Subscrive_Topic);
                         }
@@ -168,6 +171,62 @@ namespace OTAService
             }
         }
 
+        static string GetSubscribeTagName(string AliasTopic)
+        {
+            string SubscribeTagName = string.Empty;
+            SubscribeTagName = dic_MQTT_Recv.Where(p => p.Value.Equals(AliasTopic)).FirstOrDefault().Key;
+            return SubscribeTagName;
+
+        }
+
+        static string GetSubscribeAliasTopic(string Topic)
+        {
+            string AliasTopic = Topic;
+            string ReturnAliasTopic = string.Empty;
+            string[] tmpTopic = Topic.Split('/');
+            List<string> Compare = new List<string>();
+            int IndexLimit = 0;
+
+            foreach (KeyValuePair<string, string> kvp in dic_MQTT_Recv)
+            {
+                Compare.Clear();
+                string[] tmpSource = kvp.Value.Split('/');
+                if (tmpSource[tmpSource.Length - 1] != "#" && tmpSource.Length < tmpTopic.Length)
+                    continue;
+
+                IndexLimit = Math.Min(tmpSource.Length, tmpTopic.Length);
+                for (int i = 0; i < IndexLimit; i++)
+                {
+                    if (tmpSource[i] == "")
+                        continue;
+
+                    if (tmpSource[i] == tmpTopic[i])
+                    {
+                        Compare.Add(tmpSource[i]);
+                    }
+                    if (tmpSource[i] == "+")
+                    {
+                        Compare.Add(tmpSource[i]);
+                    }
+                    if (tmpSource[i] == "#")
+                    {
+                        Compare.Add(tmpSource[i]);
+                        break;
+                    }
+                }
+                string CompareResult = "/" + String.Join("/", Compare).ToString();
+                if (kvp.Value.ToString() == CompareResult)
+                {
+                    AliasTopic = kvp.Value.ToString();
+                    break;
+                }
+
+            }
+
+            ReturnAliasTopic = AliasTopic;
+            return ReturnAliasTopic;
+        }
+
 
         static void Timer_Routine_Job(int interval)
         {
@@ -198,7 +257,7 @@ namespace OTAService
             }
             catch (Exception ex)
             {
-
+                logger.Error("Report OTA HeartBeat Error Msg"+ ex.Message);
             }
         }
 
@@ -210,10 +269,27 @@ namespace OTAService
             string topic = e.ApplicationMessage.Topic;
             string message = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
 
-       
+            string AliasTopic = GetSubscribeAliasTopic(topic);
+            string SubsTopic_Tag = GetSubscribeTagName(AliasTopic);
 
-            Thread thread = new Thread(() => ProcrssOTA(topic, message));
-            thread.Start();
+            switch(SubsTopic_Tag)
+            {
+                case "Host_OTA":
+                     Thread thread = new Thread(() => ProcrssOTA(topic, message));
+                     thread.Start();
+                    break;
+
+                case "IOT_OTA_Ack":
+                case "Worker_OTA_Ack":
+
+                    //-----判斷是否為 IOT Worker 回饋的 PID Info-----
+                    //-----如果是就直接進行 塞進去dicitionary中
+                    break;
+
+                default:
+                    break;
+
+            }
         }
 
         // ---------- This is function is put message to MQTT Broker 
@@ -232,17 +308,19 @@ namespace OTAService
         static void ProcrssOTA(string topic, string payload)
         {
             OTAService.cls_Cmd_OTA OTA_CMD = JsonConvert.DeserializeObject<cls_Cmd_OTA>(payload);
-            OTAService.cls_Cmd_OTA_Ack OTA_CMD_Ack = new OTAService.cls_Cmd_OTA_Ack();
-
+            string OTA_Result = string.Empty;
             string OTA_Key = string.Concat(OTA_CMD.App_Name, "_", OTA_CMD.Trace_ID);
 
-            OTA_CMD_Ack.Trace_ID = OTA_CMD.Trace_ID;
-            OTA_CMD_Ack.App_Name = OTA_CMD.App_Name;
-            OTA_CMD_Ack.New_Version = OTA_CMD.New_Version;
-
             string RemotePath = string.Concat("ftp://", OTA_CMD.FTP_Server, "/", OTA_CMD.Image_Name);
-            string LocalPath = Path.Combine(AppContext.BaseDirectory, "OTA", "Download", OTA_CMD.Trace_ID, OTA_CMD.Image_Name);
-            string ZIPPath = Path.Combine(AppContext.BaseDirectory, "OTA", "Extract", OTA_CMD.Trace_ID);
+            string LocalPath = Path.Combine(dic_SYS_Setting[OTA_DL_Path], OTA_CMD.Trace_ID, OTA_CMD.Image_Name);
+            string ZIPPath = Path.Combine(dic_SYS_Setting[OTA_ZIP_Path], OTA_CMD.Trace_ID);
+
+            //----Run Bat 怎麼知道路徑位置
+
+            //------ 使用Local 變數
+            string _OTA_App_key = string.Empty;
+            string _Publish_OTA_Topic = string.Empty;
+            string _Publish_OTA_Message = string.Empty;
 
             if (!Directory.Exists(Path.GetDirectoryName(LocalPath)))
             {
@@ -255,8 +333,7 @@ namespace OTAService
                 client.Credentials = new NetworkCredential(OTA_CMD.User_name, OTA_CMD.Password);
                 client.DownloadFile(RemotePath, LocalPath);
                 string strMD5 = GetMD5HashFromFile(LocalPath);
-                OTA_CMD_Ack.MD5_String = strMD5;
-
+               
                 if (strMD5.Equals(OTA_CMD.MD5_String))
                 {
                     using (var zip = ZipFile.Read(LocalPath))
@@ -272,9 +349,9 @@ namespace OTAService
                         case "IOT":
                         case "WORKER":
 
-                            string _OTA_App_key = string.Concat(OTA_CMD.App_Name, "OTA");
-                            string _Publish_OTA_Topic = dic_MQTT_Send[_OTA_App_key].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
-                            string _Publish_OTA_Message = JsonConvert.SerializeObject(new { Trace_ID = OTA_Key, Cmd = "OTA" }, Formatting.Indented);
+                             _OTA_App_key = string.Concat(OTA_CMD.App_Name, "OTA");
+                            _Publish_OTA_Topic = dic_MQTT_Send[_OTA_App_key].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
+                            _Publish_OTA_Message = JsonConvert.SerializeObject(new { Trace_ID = OTA_Key, Cmd = "OTA" }, Formatting.Indented);
                             client_Publish_To_Broker(_Publish_OTA_Topic, _Publish_OTA_Message);
 
                             Thread.Sleep(10000); // Wait 10 s
@@ -295,32 +372,33 @@ namespace OTAService
                                     processToKill.Kill();
                                    // Array.ForEach(Process.GetProcessesByName("cmd"), x => x.Kill());  // cmd line colsed ?
                                 }
-                            }
+                            
 
-                            Thread.Sleep(30000); // Wait 3 s
+                                Thread.Sleep(30000); // Wait 3 s
 
-                            if (osNameAndVersion.Contains("Linux"))
-                            {
-                                string shell_cmd = string.Concat(@"sh shellcmd.sh");
-                                Execute_Linux_Command(shell_cmd);
+                                if (osNameAndVersion.Contains("Linux") || osNameAndVersion.Contains("MacOS"))
+                                {
+                                   string shell_cmd = string.Concat(@"sh shellcmd.sh");
+                                   Execute_Linux_Command(shell_cmd);
 
-                            }
-                            else if (osNameAndVersion.Contains("MacOS"))
-                            {
-                                string shell_cmd = string.Concat(@"sh shellcmd.sh");
-                                Execute_Linux_Command(shell_cmd);
-                            }
-                            else
-                            {
-                                ProcessStartInfo Info2 = new ProcessStartInfo();
-                                Info2.FileName = "xxx.bat";//執行的檔案名稱
-                                Info2.WorkingDirectory = @"d:\test";//檔案所在的目錄
-                                Process.Start(Info2);
+                                }
+                               
+                                else
+                                {
+                                    ProcessStartInfo Info2 = new ProcessStartInfo();
+                                    Info2.FileName = "xxx.bat";//執行的檔案名稱
+                                    Info2.WorkingDirectory = @"d:\test";//檔案所在的目錄
+                                    Process.Start(Info2);
+                                }
                             }
                             break;
 
                         case "FIRMWARE":
-
+                            // 移動Firmware .bin to http server
+                            string OTA_Image_Path = string.Empty;
+                            _Publish_OTA_Topic = dic_MQTT_Send[_OTA_App_key].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]); // 這邊要取代成Sensor ID 才可以
+                            _Publish_OTA_Message = JsonConvert.SerializeObject(new { Type = "OTA", OTA_Path = OTA_Image_Path,Interval = 60000 }, Formatting.Indented);
+                            client_Publish_To_Broker(_Publish_OTA_Topic, _Publish_OTA_Message);
                             break;
 
                         default:
@@ -331,7 +409,7 @@ namespace OTAService
                 }
                 else
                 {
-                    OTA_CMD_Ack.Cmd_Result = "NG";
+                    OTA_Result = "NG";
                     logger.Error(string.Format("Download File MD5 Check Mismatch, MD5 : {0}, OTA_Cmd : {1}", strMD5, payload));
                 }
 
@@ -343,6 +421,12 @@ namespace OTAService
             }
 
             string _Publish_Topic = dic_MQTT_Send["OTA_Ack"].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
+            OTAService.cls_Cmd_OTA_Ack OTA_CMD_Ack = new OTAService.cls_Cmd_OTA_Ack();
+            OTA_CMD_Ack.Trace_ID = OTA_CMD.Trace_ID;
+            OTA_CMD_Ack.App_Name = OTA_CMD.App_Name;
+            OTA_CMD_Ack.MD5_String = OTA_CMD.MD5_String;
+            OTA_CMD_Ack.New_Version = OTA_CMD.New_Version;
+            OTA_CMD_Ack.Cmd_Result = OTA_Result;
             string _Publish_Message = JsonConvert.SerializeObject(OTA_CMD_Ack);
             client_Publish_To_Broker(_Publish_Topic, _Publish_Message);
 
@@ -387,7 +471,8 @@ namespace OTAService
             {
                 foreach (var el in Receive_Topic.Elements())
                 {
-                    dic_MQTT_Recv.Add(el.Name.LocalName, el.Value);
+                    string receive_topic = el.Value.Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]);
+                    dic_MQTT_Recv.Add(el.Name.LocalName, receive_topic);
                 }
             }
 
