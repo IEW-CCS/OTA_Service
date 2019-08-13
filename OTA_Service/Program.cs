@@ -349,9 +349,9 @@ namespace OTAService
                         case "IOT":
                         case "WORKER":
 
-                             _OTA_App_key = string.Concat(OTA_CMD.App_Name, "OTA");
-                            _Publish_OTA_Topic = dic_MQTT_Send[_OTA_App_key].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
-                            _Publish_OTA_Message = JsonConvert.SerializeObject(new { Trace_ID = OTA_Key, Cmd = "OTA" }, Formatting.Indented);
+                            string _OTA_App_key = string.Concat(OTA_CMD.App_Name, "OTA");
+                            string _Publish_OTA_Topic = dic_MQTT_Send[_OTA_App_key].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
+                            string _Publish_OTA_Message = JsonConvert.SerializeObject(new { Trace_ID = OTA_Key, Cmd = "OTA" }, Formatting.Indented);
                             client_Publish_To_Broker(_Publish_OTA_Topic, _Publish_OTA_Message);
 
                             Thread.Sleep(10000); // Wait 10 s
