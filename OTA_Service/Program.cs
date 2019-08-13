@@ -395,6 +395,32 @@ namespace OTAService
 
                         case "FIRMWARE":
                             // 移動Firmware .bin to http server
+
+                            /*
+                            string startFolder = @"c:\program files\Microsoft Visual Studio 9.0\";
+
+                            // Take a snapshot of the file system.  
+                            System.IO.DirectoryInfo dir = new System.IO.DirectoryInfo(startFolder);
+
+                            // This method assumes that the application has discovery permissions  
+                            // for all folders under the specified path.  
+                            IEnumerable<System.IO.FileInfo> fileList = dir.GetFiles("*.*", System.IO.SearchOption.AllDirectories);
+
+                            //Create the query  
+                            IEnumerable<System.IO.FileInfo> fileQuery =
+                                from file in fileList
+                                where file.Extension == ".txt"
+                                orderby file.Name
+                                select file;
+
+                            //Execute the query. This might write out a lot of files!  
+                            foreach (System.IO.FileInfo fi in fileQuery)
+                            {
+                                Console.WriteLine(fi.FullName);
+                            }
+                            */
+
+
                             string OTA_Image_Path = string.Empty;
                             _Publish_OTA_Topic = dic_MQTT_Send[_OTA_App_key].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]); // 這邊要取代成Sensor ID 才可以
                             _Publish_OTA_Message = JsonConvert.SerializeObject(new { Type = "OTA", OTA_Path = OTA_Image_Path,Interval = 60000 }, Formatting.Indented);
