@@ -312,7 +312,7 @@ namespace OTAService
             string OTA_Key = string.Concat(OTA_CMD.App_Name, "_", OTA_CMD.Trace_ID);
 
             string RemotePath = string.Concat("ftp://", OTA_CMD.FTP_Server, "/", OTA_CMD.Image_Name);
-            string LocalPath = Path.Combine(dic_SYS_Setting[OTA_DL_Path], OTA_CMD.Trace_ID, OTA_CMD.Image_Name);
+            string LocalPath = Path.Combine(dic_SYS_Setting[OTA_DL_Path], OTA_CMD.Trace_ID);
             string ZIPPath = Path.Combine(dic_SYS_Setting[OTA_ZIP_Path], OTA_CMD.Trace_ID);
 
             //----Run Bat 怎麼知道路徑位置
@@ -349,9 +349,9 @@ namespace OTAService
                         case "IOT":
                         case "WORKER":
 
-                            string _OTA_App_key = string.Concat(OTA_CMD.App_Name, "OTA");
-                            string _Publish_OTA_Topic = dic_MQTT_Send[_OTA_App_key].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
-                            string _Publish_OTA_Message = JsonConvert.SerializeObject(new { Trace_ID = OTA_Key, Cmd = "OTA" }, Formatting.Indented);
+                             _OTA_App_key = string.Concat(OTA_CMD.App_Name, "OTA");
+                             _Publish_OTA_Topic = dic_MQTT_Send[_OTA_App_key].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
+                             _Publish_OTA_Message = JsonConvert.SerializeObject(new { Trace_ID = OTA_Key, Cmd = "OTA" }, Formatting.Indented);
                             client_Publish_To_Broker(_Publish_OTA_Topic, _Publish_OTA_Message);
 
                             Thread.Sleep(10000); // Wait 10 s
@@ -394,13 +394,12 @@ namespace OTAService
                             break;
 
                         case "FIRMWARE":
+
+                          //  System.IO.File.Copy(ZIPPath, dic_SYS_Setting[OTA_Http_Path], true);
                             // 移動Firmware .bin to http server
 
-                            /*
-                            string startFolder = @"c:\program files\Microsoft Visual Studio 9.0\";
-
                             // Take a snapshot of the file system.  
-                            System.IO.DirectoryInfo dir = new System.IO.DirectoryInfo(startFolder);
+                            System.IO.DirectoryInfo dir = new System.IO.DirectoryInfo(ZIPPath);
 
                             // This method assumes that the application has discovery permissions  
                             // for all folders under the specified path.  
@@ -409,7 +408,7 @@ namespace OTAService
                             //Create the query  
                             IEnumerable<System.IO.FileInfo> fileQuery =
                                 from file in fileList
-                                where file.Extension == ".txt"
+                                where file.Extension == ".bin"
                                 orderby file.Name
                                 select file;
 
@@ -417,14 +416,18 @@ namespace OTAService
                             foreach (System.IO.FileInfo fi in fileQuery)
                             {
                                 Console.WriteLine(fi.FullName);
+                                string filename = Path.GetFileName(fi.FullName);
+
+                                System.IO.File.Copy(fi.FullName, Path.Combine(dic_SYS_Setting[OTA_Http_Path], filename), true);
                             }
-                            */
 
 
-                            string OTA_Image_Path = string.Empty;
-                            _Publish_OTA_Topic = dic_MQTT_Send[_OTA_App_key].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]); // 這邊要取代成Sensor ID 才可以
+
+                            string OTA_Image_Path = @"http://192.168.8.109/OTA/0002.bin";
+                            _Publish_OTA_Topic = dic_MQTT_Send["OTA_IR02"]; // 這邊要取代成Sensor ID 才可以
                             _Publish_OTA_Message = JsonConvert.SerializeObject(new { Type = "OTA", OTA_Path = OTA_Image_Path,Interval = 60000 }, Formatting.Indented);
                             client_Publish_To_Broker(_Publish_OTA_Topic, _Publish_OTA_Message);
+                            OTA_Result = "OK";
                             break;
 
                         default:
@@ -446,7 +449,7 @@ namespace OTAService
                 Console.WriteLine(ex.Message);
             }
 
-            string _Publish_Topic = dic_MQTT_Send["OTA_Ack"].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
+            string _Publish_Topic = dic_MQTT_Send["Host_OTA_Ack"].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
             OTAService.cls_Cmd_OTA_Ack OTA_CMD_Ack = new OTAService.cls_Cmd_OTA_Ack();
             OTA_CMD_Ack.Trace_ID = OTA_CMD.Trace_ID;
             OTA_CMD_Ack.App_Name = OTA_CMD.App_Name;
