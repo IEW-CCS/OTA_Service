@@ -45,11 +45,13 @@ namespace OTAService
         private static Dictionary<string, string> dic_MQTT_Basic = null;
         private static Dictionary<string, string> dic_MQTT_Recv = null;
         private static Dictionary<string, string> dic_MQTT_Send = null;
-        private static Dictionary<string, string> dic_PID = null;
+        private static Dictionary<string, cls_APP_OTA_Ack> dic_PID = null;
 
         //--4. Set Const Value 
         private const string Gateway_ID = "GateWayID";
         private const string Device_ID = "DeviceID";
+
+
         private const string OTA_DL_Path = "OTA_Download_Path";
         private const string OTA_ZIP_Path = "OTA_ZIP_Path";
         private const string OTA_Http_Path = "OTA_Http_Path";
@@ -81,7 +83,10 @@ namespace OTAService
 
                     Process currentProcess = Process.GetCurrentProcess();
                     string pid =  currentProcess.Id.ToString();
-                   
+
+                    dic_PID = new Dictionary<string, cls_APP_OTA_Ack>();
+
+
                     Console.WriteLine("Welcome DotNet Core C# MQTT Client");
                     string Config_Path = AppContext.BaseDirectory + "/settings/Setting.xml";
 
@@ -243,6 +248,7 @@ namespace OTAService
             );
             Thread_Timer_Report_EDC.Start(interval);
         }
+
         static void Routine_TimerTask(object timerState)
         {
             try
@@ -260,8 +266,6 @@ namespace OTAService
                 logger.Error("Report OTA HeartBeat Error Msg"+ ex.Message);
             }
         }
-
-
 
         // ---------- Handle MQTT Subscribe
         static void client_PublishArrived(object sender, MqttApplicationMessageReceivedEventArgs e)
@@ -281,9 +285,30 @@ namespace OTAService
 
                 case "IOT_OTA_Ack":
                 case "Worker_OTA_Ack":
+                    try
+                    {
 
-                    //-----判斷是否為 IOT Worker 回饋的 PID Info-----
-                    //-----如果是就直接進行 塞進去dicitionary中
+                        OTAService.cls_APP_OTA_Ack OTA_Ack = JsonConvert.DeserializeObject<OTAService.cls_APP_OTA_Ack>(message);
+
+                        //string dateString = jo["Datetime"].Value<string>();
+                        //DateTime dt = DateTime.ParseExact(dateString, "yyyyMMddHHmmssfff", System.Globalization.CultureInfo.CurrentCulture);
+
+                        if (OTA_Ack.Status != "OTA")
+                        {
+                            logger.Error("IOT/Work OTA Ack Receive but Status not OTA so Skip Processing");
+                            return;
+                        }
+
+                        lock (dic_PID)
+                        {
+                            dic_PID.Add(OTA_Ack.Trace_ID, OTA_Ack);
+                        }
+                    }
+
+                    catch (Exception ex)
+                    {
+                        logger.Error("Handle IOT/Work OTA Ack Receive exception msg : "+ ex.Message);
+                    }
                     break;
 
                 default:
@@ -352,7 +377,7 @@ namespace OTAService
                              _OTA_App_key = string.Concat(OTA_CMD.App_Name, "OTA");
                              _Publish_OTA_Topic = dic_MQTT_Send[_OTA_App_key].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
                              _Publish_OTA_Message = JsonConvert.SerializeObject(new { Trace_ID = OTA_Key, Cmd = "OTA" }, Formatting.Indented);
-                            client_Publish_To_Broker(_Publish_OTA_Topic, _Publish_OTA_Message);
+                             client_Publish_To_Broker(_Publish_OTA_Topic, _Publish_OTA_Message);
 
                             Thread.Sleep(10000); // Wait 10 s
 
@@ -360,7 +385,7 @@ namespace OTAService
                             string ProcessID = string.Empty;
                             lock(dic_PID)
                             {
-                                ProcessID = dic_PID[OTA_Key];
+                                ProcessID = dic_PID[OTA_Key].ProcrssID;
                                 dic_PID.Remove(OTA_Key);
                             }
 

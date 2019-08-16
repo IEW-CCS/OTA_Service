@@ -4,6 +4,17 @@ using System.Text;
 
 namespace OTAService
 {
+
+    public class cls_APP_OTA_Ack
+    {
+        public string Trace_ID { get; set; }
+        public string Version { get; set; }
+        public string Timestamp { get; set; }
+        public string Status { get; set; }
+        public string ProcrssID { get; set; }
+    }
+
+
     public class cls_Cmd_OTA
     {
         public string Trace_ID { get; set; }
