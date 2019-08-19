@@ -51,13 +51,14 @@ namespace OTAService
         private const string Gateway_ID = "GateWayID";
         private const string Device_ID = "DeviceID";
 
-
+        //--5. 設定 OTA Download Path and ZIP Path and Http Path 
         private const string OTA_DL_Path = "OTA_Download_Path";
         private const string OTA_ZIP_Path = "OTA_ZIP_Path";
         private const string OTA_Http_Path = "OTA_Http_Path";
 
+        private static  int iHB_interval = 60000;
 
-        //---5. Routin_Job
+        //---6. Routin_Job
         private static System.Threading.Timer timer_routine_job;
 
         //--- Main Processing -----------
@@ -80,20 +81,23 @@ namespace OTAService
 
                 try
                 {
+                
+                   // * Get Procrss ID sample code 
+                   // Process currentProcess = Process.GetCurrentProcess();
+                   // string pid =  currentProcess.Id.ToString();
 
-                    Process currentProcess = Process.GetCurrentProcess();
-                    string pid =  currentProcess.Id.ToString();
 
+                    //---- Create APP OTA Ack Dictionary ------
                     dic_PID = new Dictionary<string, cls_APP_OTA_Ack>();
 
 
-                    Console.WriteLine("Welcome DotNet Core C# MQTT Client");
+                    logger.Info("Welcome DotNet Core C# MQTT Client");
                     string Config_Path = AppContext.BaseDirectory + "/settings/Setting.xml";
 
                     logger.Info("Load MQTT Config From File: " + Config_Path);
-
                     Load_Xml_Config_To_Dict(Config_Path);
 
+                    logger.Info(string.Format("MQTT Broker ID :{0}, Port No : {1}.", dic_MQTT_Basic["BrokerIP"], dic_MQTT_Basic["BrokerPort"]));
                     logger.Info("Load MQTT Config successful");
 
                     var options = new MqttClientOptionsBuilder()
@@ -104,7 +108,7 @@ namespace OTAService
                     //- 1. setting receive topic defect # for all
                     client.Connected += async (s, e) =>
                     {
-                        logger.Info("Connect TO MQTT Server");
+                        logger.Info("Connect TO MQTT Server successful");
 
                         foreach (KeyValuePair<string, string> kvp in dic_MQTT_Recv)
                         {
@@ -147,16 +151,30 @@ namespace OTAService
                         logger.Info("Process is exiting!");
                     };
 
-                    logger.Info("System Initial Finished");
+                    
 
                     //-  5.2 set thread pool max
                     ThreadPool.SetMaxThreads(16, 16);
                     ThreadPool.SetMinThreads(4, 4);
 
+                    //-- 5.3 Get OS Name and Version 
                     var osNameAndVersion = System.Runtime.InteropServices.RuntimeInformation.OSDescription;
 
-                    Timer_Routine_Job(60000);  //execute routine job 
+                    //-- 5.4 Report HeartBeat Ratio
 
+                    string tmpHBInterval = string.Empty;
+                    if (dic_SYS_Setting.TryGetValue("HeartBeat", out tmpHBInterval))
+                    {
+                        int number = 60000;
+                        if(Int32.TryParse(tmpHBInterval, out number))
+                        {
+                            iHB_interval = number * 1000;
+                        } 
+                    }
+
+                    Timer_Routine_Job(iHB_interval);  //execute routine job 
+                    logger.Info(string.Format("HeartBeat Report : {0} ms",iHB_interval.ToString()));
+                    logger.Info("System Initial Finished");
 
                     //- 6. 執行無窮迴圈等待 
                     Console.WriteLine("Please key in Ctrl+ C to exit");
@@ -176,6 +194,7 @@ namespace OTAService
             }
         }
 
+        // For MQTT Receive Message and get Config Tag Name 
         static string GetSubscribeTagName(string AliasTopic)
         {
             string SubscribeTagName = string.Empty;
@@ -183,7 +202,6 @@ namespace OTAService
             return SubscribeTagName;
 
         }
-
         static string GetSubscribeAliasTopic(string Topic)
         {
             string AliasTopic = Topic;
@@ -232,7 +250,7 @@ namespace OTAService
             return ReturnAliasTopic;
         }
 
-
+        // Report HeartBeat Timer Job
         static void Timer_Routine_Job(int interval)
         {
             if (interval == 0)
@@ -249,16 +267,16 @@ namespace OTAService
             Thread_Timer_Report_EDC.Start(interval);
         }
 
+        // Report HeartBeat Timer Task 
         static void Routine_TimerTask(object timerState)
         {
             try
             {
-
                 string _OTA_App_key = "HeartBeat";
                 string _Publish_OTA_Topic = dic_MQTT_Send[_OTA_App_key].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]);
                 string _Publish_OTA_Message = JsonConvert.SerializeObject(new { Trace_ID = DateTime.Now.ToString("yyyyMMddHHmmssfff"), Cmd = "OTA_HB" }, Formatting.Indented);
                 client_Publish_To_Broker(_Publish_OTA_Topic, _Publish_OTA_Message);
-                logger.Info("Report OTA HeartBeat" );
+                logger.Info(string.Format ("Report OTA HeartBeat, Topoc : {0} .", _Publish_OTA_Topic));
 
             }
             catch (Exception ex)
@@ -267,7 +285,8 @@ namespace OTAService
             }
         }
 
-        // ---------- Handle MQTT Subscribe
+
+        // Handle MQTT Receive Message
         static void client_PublishArrived(object sender, MqttApplicationMessageReceivedEventArgs e)
         {
             string topic = e.ApplicationMessage.Topic;
@@ -287,15 +306,12 @@ namespace OTAService
                 case "Worker_OTA_Ack":
                     try
                     {
-
                         OTAService.cls_APP_OTA_Ack OTA_Ack = JsonConvert.DeserializeObject<OTAService.cls_APP_OTA_Ack>(message);
-
-                        //string dateString = jo["Datetime"].Value<string>();
+                        // string to datetime sample code
                         //DateTime dt = DateTime.ParseExact(dateString, "yyyyMMddHHmmssfff", System.Globalization.CultureInfo.CurrentCulture);
-
                         if (OTA_Ack.Status != "OTA")
                         {
-                            logger.Error("IOT/Work OTA Ack Receive but Status not OTA so Skip Processing");
+                            logger.Error("IOT/Work OTA Ack Receive Message but Status not OTA so Skip Processing");
                             return;
                         }
 
@@ -333,20 +349,23 @@ namespace OTAService
         static void ProcrssOTA(string topic, string payload)
         {
             OTAService.cls_Cmd_OTA OTA_CMD = JsonConvert.DeserializeObject<cls_Cmd_OTA>(payload);
+
             string OTA_Result = string.Empty;
             string OTA_Key = string.Concat(OTA_CMD.App_Name, "_", OTA_CMD.Trace_ID);
 
             string RemotePath = string.Concat("ftp://", OTA_CMD.FTP_Server, "/", OTA_CMD.Image_Name);
+
             string LocalPath = Path.Combine(dic_SYS_Setting[OTA_DL_Path], OTA_CMD.Trace_ID);
-            string ZIPPath = Path.Combine(dic_SYS_Setting[OTA_ZIP_Path], OTA_CMD.Trace_ID);
+            string ZIPPath   = Path.Combine(dic_SYS_Setting[OTA_ZIP_Path], OTA_CMD.Trace_ID);
 
-            //----Run Bat 怎麼知道路徑位置
 
-            //------ 使用Local 變數
-            string _OTA_App_key = string.Empty;
-            string _Publish_OTA_Topic = string.Empty;
-            string _Publish_OTA_Message = string.Empty;
+            //------ 使用Local 變數 ------
+            string _APP_OTA_Topic_key = string.Empty;
 
+            string _Publish_APP_OTA_Topic = string.Empty;
+            string _Publish_APP_OTA_Message = string.Empty;
+
+            //------- Check Download Path Directory exist or not -------
             if (!Directory.Exists(Path.GetDirectoryName(LocalPath)))
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(LocalPath));
@@ -374,48 +393,76 @@ namespace OTAService
                         case "IOT":
                         case "WORKER":
 
-                             _OTA_App_key = string.Concat(OTA_CMD.App_Name, "OTA");
-                             _Publish_OTA_Topic = dic_MQTT_Send[_OTA_App_key].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
-                             _Publish_OTA_Message = JsonConvert.SerializeObject(new { Trace_ID = OTA_Key, Cmd = "OTA" }, Formatting.Indented);
-                             client_Publish_To_Broker(_Publish_OTA_Topic, _Publish_OTA_Message);
+                             _APP_OTA_Topic_key = string.Concat(OTA_CMD.App_Name, "OTA");
+                             _Publish_APP_OTA_Topic = dic_MQTT_Send[_APP_OTA_Topic_key].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
+                             _Publish_APP_OTA_Message = JsonConvert.SerializeObject(new { Trace_ID = OTA_Key, Cmd = "OTA" }, Formatting.Indented);
+                             client_Publish_To_Broker(_Publish_APP_OTA_Topic, _Publish_APP_OTA_Message);
 
-                            Thread.Sleep(10000); // Wait 10 s
+                            Thread.Sleep(10000); // Wait 10 s 
 
-                            int proceid = 0;
-                            string ProcessID = string.Empty;
+                            int intProcessID = 0;
+                            string strProcessID = string.Empty;
+
                             lock(dic_PID)
                             {
-                                ProcessID = dic_PID[OTA_Key].ProcrssID;
+                                strProcessID = dic_PID[OTA_Key].ProcrssID;
                                 dic_PID.Remove(OTA_Key);
                             }
 
-                            if (int.TryParse(ProcessID, out proceid))
+                            if (int.TryParse(strProcessID, out intProcessID))
                             {
-                                if (ProcessExists(proceid))
+                                if (ProcessExists(intProcessID))
                                 {
-                                    Process processToKill = Process.GetProcessById(proceid);
+                                    Process processToKill = Process.GetProcessById(intProcessID);
                                     processToKill.Kill();
-                                   // Array.ForEach(Process.GetProcessesByName("cmd"), x => x.Kill());  // cmd line colsed ?
-                                }
-                            
-
-                                Thread.Sleep(30000); // Wait 3 s
-
-                                if (osNameAndVersion.Contains("Linux") || osNameAndVersion.Contains("MacOS"))
-                                {
-                                   string shell_cmd = string.Concat(@"sh shellcmd.sh");
-                                   Execute_Linux_Command(shell_cmd);
-
-                                }
-                               
-                                else
-                                {
-                                    ProcessStartInfo Info2 = new ProcessStartInfo();
-                                    Info2.FileName = "xxx.bat";//執行的檔案名稱
-                                    Info2.WorkingDirectory = @"d:\test";//檔案所在的目錄
-                                    Process.Start(Info2);
+                                    // Array.ForEach(Process.GetProcessesByName("cmd"), x => x.Kill());  // cmd line colsed ?
                                 }
                             }
+
+                            Thread.Sleep(30000); // Wait 3 s
+
+                            if (osNameAndVersion.Contains("Linux") || osNameAndVersion.Contains("MacOS"))
+                            {
+                                string shell_argument =string.Concat( ZIPPath, " ", OTA_CMD.App_Name) ;
+
+                                System.IO.DirectoryInfo APP_OTA_Dir = new System.IO.DirectoryInfo(ZIPPath);
+  
+                                IEnumerable<System.IO.FileInfo> APP_OTA_fileList = APP_OTA_Dir.GetFiles("*.*", System.IO.SearchOption.AllDirectories);
+ 
+                                IEnumerable<System.IO.FileInfo> APP_OTA_fileQuery =
+                                    from file in APP_OTA_fileList
+                                    where file.Extension == ".sh"
+                                    orderby file.Name
+                                    select file;
+
+
+                                if (APP_OTA_fileQuery.Count() == 1)
+                                {
+                                   
+                                    foreach (System.IO.FileInfo fi in APP_OTA_fileQuery)
+                                    {
+
+                                        string shell_cmd = string.Concat(@"sh ", fi.FullName, " ", shell_argument);
+                                        Execute_Linux_Command(shell_cmd);
+                                        logger.Info(string.Format("Handle IOT/Work OTA Process Execute Lunux Shell scripts : {0}." , shell_cmd));
+                                    }
+
+                                }
+                                else
+                                {
+                                    var result = String.Join(", ", APP_OTA_fileList.Select(p => p.FullName).ToArray());
+                                    logger.Error(string.Format("Handle IOT/Work OTA Process Execute Lunux Shell scripts No or One more Scripe in folder {0}, Lists: {1}.", ZIPPath, result.ToString()));
+                                }
+                            }
+                               
+                            else
+                            {
+                                ProcessStartInfo Info2 = new ProcessStartInfo();
+                                Info2.FileName = "xxx.bat";//執行的檔案名稱
+                                Info2.WorkingDirectory = @"d:\test";//檔案所在的目錄
+                                Process.Start(Info2);
+                            }
+                            
                             break;
 
                         case "FIRMWARE":
