@@ -55,6 +55,7 @@ namespace OTAService
         private const string OTA_DL_Path = "OTA_Download_Path";
         private const string OTA_ZIP_Path = "OTA_ZIP_Path";
         private const string OTA_Http_Path = "OTA_Http_Path";
+        private const string OTA_Http_Remote_Path = "OTA_Http_Remote_Path";
 
         private static  int iHB_interval = 60000;
 
@@ -291,7 +292,6 @@ namespace OTAService
         {
             string topic = e.ApplicationMessage.Topic;
             string message = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
-
             string AliasTopic = GetSubscribeAliasTopic(topic);
             string SubsTopic_Tag = GetSubscribeTagName(AliasTopic);
 
@@ -348,6 +348,10 @@ namespace OTAService
 
         static void ProcrssOTA(string topic, string payload)
         {
+            string[] Topic = topic.Split('/');
+            string GateWayID = Topic[2].ToString();
+            string DeviceID = Topic[3].ToString();
+
             OTAService.cls_Cmd_OTA OTA_CMD = JsonConvert.DeserializeObject<cls_Cmd_OTA>(payload);
 
             string OTA_Result = string.Empty;
@@ -448,56 +452,92 @@ namespace OTAService
                                     }
 
                                 }
-                                else
+                                else if (APP_OTA_fileQuery.Count() > 1)
                                 {
                                     var result = String.Join(", ", APP_OTA_fileList.Select(p => p.FullName).ToArray());
-                                    logger.Error(string.Format("Handle IOT/Work OTA Process Execute Lunux Shell scripts No or One more Scripe in folder {0}, Lists: {1}.", ZIPPath, result.ToString()));
+                                    logger.Error(string.Format("Handle IOT/Work OTA Process Execute more than one Lunux Shell scripts in folder {0}, Lists: {1}.", ZIPPath, result.ToString()));
+                                }
+                                else
+                                {
+                                    logger.Error(string.Format("Handle IOT/Work OTA Process Execute without Lunux Shell scripts in folder {0}.", ZIPPath));
                                 }
                             }
                                
                             else
                             {
-                                ProcessStartInfo Info2 = new ProcessStartInfo();
-                                Info2.FileName = "xxx.bat";//執行的檔案名稱
-                                Info2.WorkingDirectory = @"d:\test";//檔案所在的目錄
-                                Process.Start(Info2);
+                                string batch_file_argument = string.Concat(ZIPPath, " ", OTA_CMD.App_Name);
+
+                                System.IO.DirectoryInfo Win_APP_OTA_Dir = new System.IO.DirectoryInfo(ZIPPath);
+
+                                IEnumerable<System.IO.FileInfo> Win_APP_OTA_fileList = Win_APP_OTA_Dir.GetFiles("*.*", System.IO.SearchOption.AllDirectories);
+
+                                IEnumerable<System.IO.FileInfo> Win_APP_OTA_fileQuery =
+                                    from file in Win_APP_OTA_fileList
+                                    where file.Extension == ".bat"
+                                    orderby file.Name
+                                    select file;
+
+
+                                if (Win_APP_OTA_fileQuery.Count() == 1)
+                                {
+                                    foreach (System.IO.FileInfo fi in Win_APP_OTA_fileQuery)
+                                    {
+                                        string shell_argument = string.Concat(ZIPPath, " ", OTA_CMD.App_Name);
+
+                                        ProcessStartInfo ProcInfo = new ProcessStartInfo();
+                                        ProcInfo.FileName = fi.FullName;//執行的檔案名稱
+                                        ProcInfo.WorkingDirectory = fi.DirectoryName;//檔案所在的目錄
+                                        ProcInfo.Arguments = shell_argument;
+                                        Process.Start(ProcInfo);
+                            
+                                        logger.Info(string.Format("Handle IOT/Work OTA Process Execute Windows Batch file : {0} and arguments : {1} .", fi.FullName, shell_argument));
+                                    }
+
+                                }
+                                else if (Win_APP_OTA_fileQuery.Count() > 1)
+                                {
+                                    var result = String.Join(", ", Win_APP_OTA_fileQuery.Select(p => p.FullName).ToArray());
+                                    logger.Error(string.Format("Handle IOT/Work OTA Process Execute more than one Windows Batch file in folder {0}, Lists: {1}.", ZIPPath, result.ToString()));
+                                }
+                                else
+                                {
+                                    logger.Error(string.Format("Handle IOT/Work OTA Process Without Windows Batch file in folder {0}.", ZIPPath));
+                                }
+
+
                             }
                             
                             break;
 
                         case "FIRMWARE":
 
-                          //  System.IO.File.Copy(ZIPPath, dic_SYS_Setting[OTA_Http_Path], true);
-                            // 移動Firmware .bin to http server
-
                             // Take a snapshot of the file system.  
+                            string Firmware_Name = string.Empty;
                             System.IO.DirectoryInfo dir = new System.IO.DirectoryInfo(ZIPPath);
 
                             // This method assumes that the application has discovery permissions  
                             // for all folders under the specified path.  
-                            IEnumerable<System.IO.FileInfo> fileList = dir.GetFiles("*.*", System.IO.SearchOption.AllDirectories);
+                            IEnumerable<System.IO.FileInfo> firmware_OTA_fileList = dir.GetFiles("*.*", System.IO.SearchOption.AllDirectories);
 
                             //Create the query  
-                            IEnumerable<System.IO.FileInfo> fileQuery =
-                                from file in fileList
+                            IEnumerable<System.IO.FileInfo> firm_OTA_fileQuery =
+                                from file in firmware_OTA_fileList
                                 where file.Extension == ".bin"
                                 orderby file.Name
                                 select file;
 
                             //Execute the query. This might write out a lot of files!  
-                            foreach (System.IO.FileInfo fi in fileQuery)
+                            foreach (System.IO.FileInfo fi in firm_OTA_fileQuery)
                             {
-                                Console.WriteLine(fi.FullName);
-                                string filename = Path.GetFileName(fi.FullName);
-
-                                System.IO.File.Copy(fi.FullName, Path.Combine(dic_SYS_Setting[OTA_Http_Path], filename), true);
+                                Firmware_Name = Path.GetFileName(fi.FullName);
+                                System.IO.File.Copy(fi.FullName, Path.Combine(dic_SYS_Setting[OTA_Http_Path], Firmware_Name), true);
                             }
 
 
-
-                            string OTA_Image_Path = @"http://192.168.8.109/OTA/0002.bin";
-                            _Publish_OTA_Topic = dic_MQTT_Send["OTA_IR02"]; // 這邊要取代成Sensor ID 才可以
-                            _Publish_OTA_Message = JsonConvert.SerializeObject(new { Type = "OTA", OTA_Path = OTA_Image_Path,Interval = 60000 }, Formatting.Indented);
+                            string firmwarw_OTA_key = string.Concat("OTA_", DeviceID); // OTA cmd  no define gateway id or device id.
+                            string OTA_Image_Path = string.Concat(dic_SYS_Setting[OTA_Http_Remote_Path], Firmware_Name);
+                            string _Publish_OTA_Topic = dic_MQTT_Send[firmwarw_OTA_key]; 
+                            string _Publish_OTA_Message = JsonConvert.SerializeObject(new { Type = "OTA", OTA_Path = OTA_Image_Path,Interval = 60000 }, Formatting.Indented);
                             client_Publish_To_Broker(_Publish_OTA_Topic, _Publish_OTA_Message);
                             OTA_Result = "OK";
                             break;
@@ -520,6 +560,10 @@ namespace OTAService
 
                 Console.WriteLine(ex.Message);
             }
+
+            //--------- Host Ack 這個指令是否等 App 更新完以後再發送 -------
+            // 是否用 APP +版號 Push 到 List 中，wait SW or Firmware initial message
+            // check list 中是否有該Key在上報, 問題在於程式怎麼判斷版號。
 
             string _Publish_Topic = dic_MQTT_Send["Host_OTA_Ack"].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
             OTAService.cls_Cmd_OTA_Ack OTA_CMD_Ack = new OTAService.cls_Cmd_OTA_Ack();
