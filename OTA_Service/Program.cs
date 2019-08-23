@@ -46,6 +46,7 @@ namespace OTAService
         private static Dictionary<string, string> dic_MQTT_Recv = null;
         private static Dictionary<string, string> dic_MQTT_Send = null;
         private static Dictionary<string, cls_APP_OTA_Ack> dic_PID = null;
+        private static Dictionary<string, cls_Cmd_OTA_Ack>  dic_APP_OTA = null;
 
         //--4. Set Const Value 
         private const string Gateway_ID = "GateWayID";
@@ -91,6 +92,8 @@ namespace OTAService
 
                     //---- Create APP OTA Ack Dictionary ------
                     dic_PID = new Dictionary<string, cls_APP_OTA_Ack>();
+                    dic_APP_OTA = new Dictionary<string, cls_Cmd_OTA_Ack>();
+
 
 
                     logger.Info("Welcome DotNet Core C# MQTT Client");
@@ -326,6 +329,25 @@ namespace OTAService
                     {
                         logger.Error("Handle IOT/Work OTA Ack Receive exception msg : "+ ex.Message);
                     }
+                    break;
+
+                case "IOT_OTA_Init":
+                case "Worker_OTA_Init":
+                case "Frameware_OTA_Init":
+
+                    string _Publish_Topic = dic_MQTT_Send["Host_OTA_Ack"].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
+                    string AppName = string.Empty;
+                    if(dic_APP_OTA.ContainsKey(AppName))
+                    {
+                        OTAService.cls_Cmd_OTA_Ack OTA_CMD_Ack = dic_APP_OTA[AppName];
+                        string _Publish_Message = JsonConvert.SerializeObject(OTA_CMD_Ack);
+                        client_Publish_To_Broker(_Publish_Topic, _Publish_Message);
+                        lock(dic_APP_OTA)
+                        {
+                            dic_APP_OTA.Remove(AppName);
+                        }
+                    }
+
                     break;
 
                 default:
@@ -578,6 +600,28 @@ namespace OTAService
                     logger.Error(string.Format("Download File MD5 Check Mismatch, MD5 : {0}, OTA_Cmd : {1}", strMD5, payload));
                 }
 
+
+
+                string _Publish_Topic = dic_MQTT_Send["Host_OTA_Ack"].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
+                OTAService.cls_Cmd_OTA_Ack OTA_CMD_Ack = new OTAService.cls_Cmd_OTA_Ack();
+                OTA_CMD_Ack.Trace_ID = OTA_CMD.Trace_ID;
+                OTA_CMD_Ack.App_Name = OTA_CMD.App_Name;
+                OTA_CMD_Ack.MD5_String = OTA_CMD.MD5_String;
+                OTA_CMD_Ack.New_Version = OTA_CMD.New_Version;
+                OTA_CMD_Ack.Cmd_Result = OTA_Result;
+                string _Publish_Message = JsonConvert.SerializeObject(OTA_CMD_Ack);
+
+                if (OTA_Result == "NG")
+                {
+                    client_Publish_To_Broker(_Publish_Topic, _Publish_Message);
+                }
+                else
+                {
+                    lock (dic_APP_OTA)
+                    {
+                        dic_APP_OTA.Add(OTA_CMD.App_Name, OTA_CMD_Ack);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -585,19 +629,7 @@ namespace OTAService
                 Console.WriteLine(ex.Message);
             }
 
-            //--------- Host Ack 這個指令是否等 App 更新完以後再發送 -------
-            // 是否用 APP +版號 Push 到 List 中，wait SW or Firmware initial message
-            // check list 中是否有該Key在上報, 問題在於程式怎麼判斷版號。
-
-            string _Publish_Topic = dic_MQTT_Send["Host_OTA_Ack"].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
-            OTAService.cls_Cmd_OTA_Ack OTA_CMD_Ack = new OTAService.cls_Cmd_OTA_Ack();
-            OTA_CMD_Ack.Trace_ID = OTA_CMD.Trace_ID;
-            OTA_CMD_Ack.App_Name = OTA_CMD.App_Name;
-            OTA_CMD_Ack.MD5_String = OTA_CMD.MD5_String;
-            OTA_CMD_Ack.New_Version = OTA_CMD.New_Version;
-            OTA_CMD_Ack.Cmd_Result = OTA_Result;
-            string _Publish_Message = JsonConvert.SerializeObject(OTA_CMD_Ack);
-            client_Publish_To_Broker(_Publish_Topic, _Publish_Message);
+           
 
         }
 
