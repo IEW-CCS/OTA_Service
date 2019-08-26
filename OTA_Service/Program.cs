@@ -337,6 +337,7 @@ namespace OTAService
 
                     string _Publish_Topic = dic_MQTT_Send["Host_OTA_Ack"].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
                     string AppName = string.Empty;
+                    // from topic paser app name
                     if(dic_APP_OTA.ContainsKey(AppName))
                     {
                         OTAService.cls_Cmd_OTA_Ack OTA_CMD_Ack = dic_APP_OTA[AppName];
