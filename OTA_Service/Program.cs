@@ -57,6 +57,7 @@ namespace OTAService
         private const string OTA_Http_Path = "OTA_Http_Path";
         private const string OTA_Http_Remote_Path = "OTA_Http_Remote_Path";
 
+
         private static  int iHB_interval = 60000;
 
         //---6. Routin_Job
@@ -359,9 +360,8 @@ namespace OTAService
 
             string RemotePath = string.Concat("ftp://", OTA_CMD.FTP_Server, "/", OTA_CMD.Image_Name);
 
-            string LocalPath = Path.Combine(dic_SYS_Setting[OTA_DL_Path], OTA_CMD.Trace_ID);
-            string ZIPPath   = Path.Combine(dic_SYS_Setting[OTA_ZIP_Path], OTA_CMD.Trace_ID);
-
+            string LocalPath = Path.Combine(dic_SYS_Setting[OTA_DL_Path],OTA_CMD.Trace_ID);
+            string ZIPPath   = Path.Combine(dic_SYS_Setting[OTA_ZIP_Path],OTA_CMD.Trace_ID);
 
             //------ 使用Local 變數 ------
             string _APP_OTA_Topic_key = string.Empty;
@@ -380,10 +380,16 @@ namespace OTAService
                 WebClient client = new WebClient();
                 client.Credentials = new NetworkCredential(OTA_CMD.User_name, OTA_CMD.Password);
                 client.DownloadFile(RemotePath, LocalPath);
+
+                logger.Info("Download file finished");
+
                 string strMD5 = GetMD5HashFromFile(LocalPath);
-               
+
+                logger.Info("Check MD5");
+
                 if (strMD5.Equals(OTA_CMD.MD5_String))
                 {
+                    logger.Info("UnZIP file name = " + LocalPath);
                     using (var zip = ZipFile.Read(LocalPath))
                     {
                         foreach (var zipEntry in zip)
@@ -397,37 +403,48 @@ namespace OTAService
                         case "IOT":
                         case "WORKER":
 
-                             _APP_OTA_Topic_key = string.Concat(OTA_CMD.App_Name, "OTA");
+                             _APP_OTA_Topic_key = string.Concat(OTA_CMD.App_Name, "_OTA");
                              _Publish_APP_OTA_Topic = dic_MQTT_Send[_APP_OTA_Topic_key].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
                              _Publish_APP_OTA_Message = JsonConvert.SerializeObject(new { Trace_ID = OTA_Key, Cmd = "OTA" }, Formatting.Indented);
                              client_Publish_To_Broker(_Publish_APP_OTA_Topic, _Publish_APP_OTA_Message);
 
-                            Thread.Sleep(10000); // Wait 10 s 
+                            Thread.Sleep(1000); // Wait 10 s 
 
                             int intProcessID = 0;
                             string strProcessID = string.Empty;
 
                             lock(dic_PID)
                             {
-                                strProcessID = dic_PID[OTA_Key].ProcrssID;
-                                dic_PID.Remove(OTA_Key);
-                            }
-
-                            if (int.TryParse(strProcessID, out intProcessID))
-                            {
-                                if (ProcessExists(intProcessID))
+                                if (dic_PID.ContainsKey(OTA_Key))
                                 {
-                                    Process processToKill = Process.GetProcessById(intProcessID);
-                                    processToKill.Kill();
-                                    // Array.ForEach(Process.GetProcessesByName("cmd"), x => x.Kill());  // cmd line colsed ?
+                                    strProcessID = dic_PID[OTA_Key].ProcrssID;
+                                    dic_PID.Remove(OTA_Key);
+
+                                    if (int.TryParse(strProcessID, out intProcessID))
+                                    {
+                                        if (ProcessExists(intProcessID))
+                                        {
+                                            Process processToKill = Process.GetProcessById(intProcessID);
+                                            processToKill.Kill();
+                                            // Array.ForEach(Process.GetProcessesByName("cmd"), x => x.Kill());  // cmd line colsed ?
+                                        }
+                                    }
+                                }
+                                else
+                                {
+
+                                    // logging no receive Ack information 
                                 }
                             }
 
-                            Thread.Sleep(30000); // Wait 3 s
+                           
 
-                            if (osNameAndVersion.Contains("Linux") || osNameAndVersion.Contains("MacOS"))
+                            Thread.Sleep(3000); // Wait 3 s
+
+                            if (osNameAndVersion.Contains("Linux") || osNameAndVersion.Contains("MacOS") )
                             {
-                                string shell_argument =string.Concat( ZIPPath, " ", OTA_CMD.App_Name) ;
+                                string shell_argument =string.Concat(OTA_CMD.App_Name, " ", ZIPPath) ;
+
 
                                 System.IO.DirectoryInfo APP_OTA_Dir = new System.IO.DirectoryInfo(ZIPPath);
   
@@ -435,7 +452,7 @@ namespace OTAService
  
                                 IEnumerable<System.IO.FileInfo> APP_OTA_fileQuery =
                                     from file in APP_OTA_fileList
-                                    where file.Extension == ".sh"
+                                    where file.Extension == ".bat"
                                     orderby file.Name
                                     select file;
 
@@ -445,10 +462,15 @@ namespace OTAService
                                    
                                     foreach (System.IO.FileInfo fi in APP_OTA_fileQuery)
                                     {
+                                        string changemod = string.Concat(@"chmod 755 ", fi.FullName);
+                                        logger.Info(string.Format("Handle IOT/Work OTA Process Execute change mod scripts : {0}.", changemod));
+
+                                        Execute_Linux_Command(changemod);
 
                                         string shell_cmd = string.Concat(@"sh ", fi.FullName, " ", shell_argument);
+                                        logger.Info(string.Format("Handle IOT/Work OTA Process Execute Lunux Shell scripts : {0}.", shell_cmd));
                                         Execute_Linux_Command(shell_cmd);
-                                        logger.Info(string.Format("Handle IOT/Work OTA Process Execute Lunux Shell scripts : {0}." , shell_cmd));
+                                        
                                     }
 
                                 }
@@ -465,7 +487,7 @@ namespace OTAService
                                
                             else
                             {
-                                string batch_file_argument = string.Concat(ZIPPath, " ", OTA_CMD.App_Name);
+                                string shell_argument = string.Concat(ZIPPath, " ", OTA_CMD.App_Name);
 
                                 System.IO.DirectoryInfo Win_APP_OTA_Dir = new System.IO.DirectoryInfo(ZIPPath);
 
@@ -482,7 +504,6 @@ namespace OTAService
                                 {
                                     foreach (System.IO.FileInfo fi in Win_APP_OTA_fileQuery)
                                     {
-                                        string shell_argument = string.Concat(ZIPPath, " ", OTA_CMD.App_Name);
 
                                         ProcessStartInfo ProcInfo = new ProcessStartInfo();
                                         ProcInfo.FileName = fi.FullName;//執行的檔案名稱
@@ -513,6 +534,8 @@ namespace OTAService
 
                             // Take a snapshot of the file system.  
                             string Firmware_Name = string.Empty;
+
+                            
                             System.IO.DirectoryInfo dir = new System.IO.DirectoryInfo(ZIPPath);
 
                             // This method assumes that the application has discovery permissions  
