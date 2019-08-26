@@ -46,6 +46,7 @@ namespace OTAService
         private static Dictionary<string, string> dic_MQTT_Recv = null;
         private static Dictionary<string, string> dic_MQTT_Send = null;
         private static Dictionary<string, cls_APP_OTA_Ack> dic_PID = null;
+        private static Dictionary<string, cls_Cmd_OTA_Ack>  dic_APP_OTA = null;
 
         //--4. Set Const Value 
         private const string Gateway_ID = "GateWayID";
@@ -91,6 +92,8 @@ namespace OTAService
 
                     //---- Create APP OTA Ack Dictionary ------
                     dic_PID = new Dictionary<string, cls_APP_OTA_Ack>();
+                    dic_APP_OTA = new Dictionary<string, cls_Cmd_OTA_Ack>();
+
 
 
                     logger.Info("Welcome DotNet Core C# MQTT Client");
@@ -328,6 +331,26 @@ namespace OTAService
                     }
                     break;
 
+                case "IOT_OTA_Init":
+                case "Worker_OTA_Init":
+                case "Frameware_OTA_Init":
+
+                    string _Publish_Topic = dic_MQTT_Send["Host_OTA_Ack"].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
+                    string AppName = string.Empty;
+                    // from topic paser app name
+                    if(dic_APP_OTA.ContainsKey(AppName))
+                    {
+                        OTAService.cls_Cmd_OTA_Ack OTA_CMD_Ack = dic_APP_OTA[AppName];
+                        string _Publish_Message = JsonConvert.SerializeObject(OTA_CMD_Ack);
+                        client_Publish_To_Broker(_Publish_Topic, _Publish_Message);
+                        lock(dic_APP_OTA)
+                        {
+                            dic_APP_OTA.Remove(AppName);
+                        }
+                    }
+
+                    break;
+
                 default:
                     break;
 
@@ -361,7 +384,8 @@ namespace OTAService
             string RemotePath = string.Concat("ftp://", OTA_CMD.FTP_Server, "/", OTA_CMD.Image_Name);
 
             string LocalPath = Path.Combine(dic_SYS_Setting[OTA_DL_Path],OTA_CMD.Trace_ID);
-            string ZIPPath   = Path.Combine(dic_SYS_Setting[OTA_ZIP_Path],OTA_CMD.Trace_ID);
+            string UnZIPPath   = Path.Combine(dic_SYS_Setting[OTA_ZIP_Path],OTA_CMD.Trace_ID);
+            string Real_UnZIPPath = Path.Combine(dic_SYS_Setting[OTA_ZIP_Path], OTA_CMD.Trace_ID,OTA_CMD.App_Name);
 
             //------ 使用Local 變數 ------
             string _APP_OTA_Topic_key = string.Empty;
@@ -394,7 +418,7 @@ namespace OTAService
                     {
                         foreach (var zipEntry in zip)
                         {
-                            zipEntry.Extract(ZIPPath, ExtractExistingFileAction.OverwriteSilently);
+                            zipEntry.Extract(Real_UnZIPPath, ExtractExistingFileAction.OverwriteSilently);
                         }
                     }
 
@@ -441,12 +465,12 @@ namespace OTAService
 
                             Thread.Sleep(3000); // Wait 3 s
 
-                            if (osNameAndVersion.Contains("Linux") || osNameAndVersion.Contains("MacOS") )
+                            if (osNameAndVersion.Contains("Linux") || osNameAndVersion.Contains("Darwin") )
                             {
-                                string shell_argument =string.Concat(OTA_CMD.App_Name, " ", ZIPPath) ;
+                                string shell_argument =string.Concat(OTA_CMD.App_Name, " ", UnZIPPath) ;
 
 
-                                System.IO.DirectoryInfo APP_OTA_Dir = new System.IO.DirectoryInfo(ZIPPath);
+                                System.IO.DirectoryInfo APP_OTA_Dir = new System.IO.DirectoryInfo(Real_UnZIPPath);
   
                                 IEnumerable<System.IO.FileInfo> APP_OTA_fileList = APP_OTA_Dir.GetFiles("*.*", System.IO.SearchOption.AllDirectories);
  
@@ -477,19 +501,19 @@ namespace OTAService
                                 else if (APP_OTA_fileQuery.Count() > 1)
                                 {
                                     var result = String.Join(", ", APP_OTA_fileList.Select(p => p.FullName).ToArray());
-                                    logger.Error(string.Format("Handle IOT/Work OTA Process Execute more than one Lunux Shell scripts in folder {0}, Lists: {1}.", ZIPPath, result.ToString()));
+                                    logger.Error(string.Format("Handle IOT/Work OTA Process Execute more than one Lunux Shell scripts in folder {0}, Lists: {1}.", Real_UnZIPPath, result.ToString()));
                                 }
                                 else
                                 {
-                                    logger.Error(string.Format("Handle IOT/Work OTA Process Execute without Lunux Shell scripts in folder {0}.", ZIPPath));
+                                    logger.Error(string.Format("Handle IOT/Work OTA Process Execute without Lunux Shell scripts in folder {0}.", Real_UnZIPPath));
                                 }
                             }
                                
                             else
                             {
-                                string shell_argument = string.Concat(ZIPPath, " ", OTA_CMD.App_Name);
+                                string shell_argument = string.Concat(UnZIPPath, " ", OTA_CMD.App_Name);
 
-                                System.IO.DirectoryInfo Win_APP_OTA_Dir = new System.IO.DirectoryInfo(ZIPPath);
+                                System.IO.DirectoryInfo Win_APP_OTA_Dir = new System.IO.DirectoryInfo(Real_UnZIPPath);
 
                                 IEnumerable<System.IO.FileInfo> Win_APP_OTA_fileList = Win_APP_OTA_Dir.GetFiles("*.*", System.IO.SearchOption.AllDirectories);
 
@@ -518,11 +542,11 @@ namespace OTAService
                                 else if (Win_APP_OTA_fileQuery.Count() > 1)
                                 {
                                     var result = String.Join(", ", Win_APP_OTA_fileQuery.Select(p => p.FullName).ToArray());
-                                    logger.Error(string.Format("Handle IOT/Work OTA Process Execute more than one Windows Batch file in folder {0}, Lists: {1}.", ZIPPath, result.ToString()));
+                                    logger.Error(string.Format("Handle IOT/Work OTA Process Execute more than one Windows Batch file in folder {0}, Lists: {1}.", Real_UnZIPPath, result.ToString()));
                                 }
                                 else
                                 {
-                                    logger.Error(string.Format("Handle IOT/Work OTA Process Without Windows Batch file in folder {0}.", ZIPPath));
+                                    logger.Error(string.Format("Handle IOT/Work OTA Process Without Windows Batch file in folder {0}.", Real_UnZIPPath));
                                 }
 
 
@@ -536,7 +560,7 @@ namespace OTAService
                             string Firmware_Name = string.Empty;
 
                             
-                            System.IO.DirectoryInfo dir = new System.IO.DirectoryInfo(ZIPPath);
+                            System.IO.DirectoryInfo dir = new System.IO.DirectoryInfo(Real_UnZIPPath);
 
                             // This method assumes that the application has discovery permissions  
                             // for all folders under the specified path.  
@@ -577,6 +601,28 @@ namespace OTAService
                     logger.Error(string.Format("Download File MD5 Check Mismatch, MD5 : {0}, OTA_Cmd : {1}", strMD5, payload));
                 }
 
+
+
+                string _Publish_Topic = dic_MQTT_Send["Host_OTA_Ack"].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
+                OTAService.cls_Cmd_OTA_Ack OTA_CMD_Ack = new OTAService.cls_Cmd_OTA_Ack();
+                OTA_CMD_Ack.Trace_ID = OTA_CMD.Trace_ID;
+                OTA_CMD_Ack.App_Name = OTA_CMD.App_Name;
+                OTA_CMD_Ack.MD5_String = OTA_CMD.MD5_String;
+                OTA_CMD_Ack.New_Version = OTA_CMD.New_Version;
+                OTA_CMD_Ack.Cmd_Result = OTA_Result;
+                string _Publish_Message = JsonConvert.SerializeObject(OTA_CMD_Ack);
+
+                if (OTA_Result == "NG")
+                {
+                    client_Publish_To_Broker(_Publish_Topic, _Publish_Message);
+                }
+                else
+                {
+                    lock (dic_APP_OTA)
+                    {
+                        dic_APP_OTA.Add(OTA_CMD.App_Name, OTA_CMD_Ack);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -584,19 +630,7 @@ namespace OTAService
                 Console.WriteLine(ex.Message);
             }
 
-            //--------- Host Ack 這個指令是否等 App 更新完以後再發送 -------
-            // 是否用 APP +版號 Push 到 List 中，wait SW or Firmware initial message
-            // check list 中是否有該Key在上報, 問題在於程式怎麼判斷版號。
-
-            string _Publish_Topic = dic_MQTT_Send["Host_OTA_Ack"].Replace("{GateWayID}", dic_SYS_Setting[Gateway_ID]).Replace("{DeviceID}", dic_SYS_Setting[Device_ID]);
-            OTAService.cls_Cmd_OTA_Ack OTA_CMD_Ack = new OTAService.cls_Cmd_OTA_Ack();
-            OTA_CMD_Ack.Trace_ID = OTA_CMD.Trace_ID;
-            OTA_CMD_Ack.App_Name = OTA_CMD.App_Name;
-            OTA_CMD_Ack.MD5_String = OTA_CMD.MD5_String;
-            OTA_CMD_Ack.New_Version = OTA_CMD.New_Version;
-            OTA_CMD_Ack.Cmd_Result = OTA_Result;
-            string _Publish_Message = JsonConvert.SerializeObject(OTA_CMD_Ack);
-            client_Publish_To_Broker(_Publish_Topic, _Publish_Message);
+           
 
         }
 
@@ -693,6 +727,19 @@ namespace OTAService
             {
                 Console.WriteLine(proc.StandardOutput.ReadLine());
             }
+
+
+            proc.WaitForExit(1000);
+
+
+            while (!proc.HasExited)
+            {
+
+            }
+
+            Console.WriteLine("**************");
+            Console.WriteLine(proc.ExitCode.ToString());
+
         }
 
     }
